@@ -34,8 +34,10 @@ export interface TitledVideoProps {
   accentColor?: string;
 }
 
-// Resolve asset path — handle URLs, absolute paths, and public/ relative paths.
-// Mirrors the helper in Explainer.tsx so absolute Windows/Unix paths work.
+// Resolve asset path — pass through URLs unchanged; treat everything else as
+// a public/-relative path (video_compose localizes local absolute paths into
+// public/ before rendering, so staticFile() is the only mechanism Remotion's
+// renderer actually supports for local assets — file:// URIs are rejected).
 function resolveAsset(src: string): string {
   if (
     src.startsWith("http://") ||
@@ -45,9 +47,6 @@ function resolveAsset(src: string): string {
     return src;
   }
   const clean = src.replace(/^file:\/\/\/?/, "");
-  if (clean.startsWith("/") || /^[A-Za-z]:[\\/]/.test(clean)) {
-    return `file:///${clean.replace(/\\/g, "/")}`;
-  }
   return staticFile(clean);
 }
 
