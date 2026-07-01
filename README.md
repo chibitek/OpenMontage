@@ -679,7 +679,7 @@ make test
 
 ## License
 
-[GNU AGPLv3](LICENSE)
+
 
 ---
 
