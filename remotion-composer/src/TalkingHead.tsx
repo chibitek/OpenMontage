@@ -9,18 +9,6 @@ import {
   useVideoConfig,
 } from "remotion";
 import { CaptionOverlay, WordCaption } from "./components/CaptionOverlay";
-
-// Resolve an asset path for Img/OffthreadVideo. Remotion's renderer refuses
-// file:// URIs and can't serve arbitrary absolute filesystem paths — the
-// only reliable local path is staticFile() against files placed under
-// remotion-composer/public/. http(s)/data URLs pass through unchanged.
-function resolveAsset(src: string): string {
-  if (src.startsWith("http://") || src.startsWith("https://") || src.startsWith("data:")) {
-    return src;
-  }
-  const clean = src.replace(/^file:\/\/\/?/, "");
-  return staticFile(clean);
-}
 import { TextCard } from "./components/TextCard";
 import { StatCard } from "./components/StatCard";
 import { CalloutBox } from "./components/CalloutBox";
