@@ -184,6 +184,16 @@ class VideoCompose(BaseTool):
                     "two_pass_encode": {"type": "boolean", "default": False},
                 },
             },
+            "duration_seconds": {
+                "type": "number",
+                "description": (
+                    "For remotion_render: overrides the composition's default "
+                    "durationInFrames to match actual content length (e.g. a "
+                    "talking-head clip's real duration) instead of the "
+                    "registered placeholder duration."
+                ),
+            },
+            "fps": {"type": "integer", "default": 30, "description": "Used with duration_seconds to compute the --duration frame-count override."},
             "codec": {"type": "string", "default": "libx264"},
             "crf": {"type": "integer", "default": 23},
             "preset": {"type": "string", "default": "medium"},
@@ -1714,6 +1724,19 @@ class VideoCompose(BaseTool):
                 cmd.extend(["--width", str(p.width), "--height", str(p.height)])
             except (ImportError, ValueError):
                 pass
+
+        # Override the composition's default fixed duration (e.g. TalkingHead's
+        # 300s placeholder) to match actual content length. Without this, a
+        # 100s avatar render would still burn through Remotion's default
+        # duration cap, rendering hundreds of seconds of trailing dead frames.
+        duration_seconds = inputs.get("duration_seconds")
+        if duration_seconds:
+            fps = inputs.get("fps", 30)
+            # The Remotion CLI's override-duration flag is `--duration` (frame
+            # count), not `--duration-in-frames` — confirmed against
+            # node_modules/@remotion/cli/dist/parsed-cli.d.ts's
+            # overrideDurationOption. Equals form required, same as --props.
+            cmd.append(f"--duration={round(float(duration_seconds) * fps)}")
 
         try:
             # Invoke from inside the composer dir so npx can resolve the

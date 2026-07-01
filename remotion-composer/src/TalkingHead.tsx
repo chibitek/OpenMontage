@@ -1,12 +1,26 @@
 import {
   AbsoluteFill,
+  Img,
   OffthreadVideo,
   Sequence,
   interpolate,
+  staticFile,
   useCurrentFrame,
   useVideoConfig,
 } from "remotion";
 import { CaptionOverlay, WordCaption } from "./components/CaptionOverlay";
+
+// Resolve an asset path for Img/OffthreadVideo. Remotion's renderer refuses
+// file:// URIs and can't serve arbitrary absolute filesystem paths — the
+// only reliable local path is staticFile() against files placed under
+// remotion-composer/public/. http(s)/data URLs pass through unchanged.
+function resolveAsset(src: string): string {
+  if (src.startsWith("http://") || src.startsWith("https://") || src.startsWith("data:")) {
+    return src;
+  }
+  const clean = src.replace(/^file:\/\/\/?/, "");
+  return staticFile(clean);
+}
 import { TextCard } from "./components/TextCard";
 import { StatCard } from "./components/StatCard";
 import { CalloutBox } from "./components/CalloutBox";
@@ -56,6 +70,9 @@ export interface TalkingHeadOverlay {
   showLegend?: boolean;
   showMarkers?: boolean;
   columns?: 2 | 3 | 4;
+  // broll_video / cta_card specific
+  videoSrc?: string;
+  logoSrc?: string;
   // Styling
   backgroundColor?: string;
   color?: string;
@@ -70,10 +87,15 @@ export interface TalkingHeadOverlay {
 const POSITION_STYLES: Record<string, React.CSSProperties> = {
   lower_third: {
     position: "absolute",
-    bottom: 320, // Above caption area (~1600px)
+    // Pushed down + shortened from the original bottom:320/height:480 —
+    // that box overlapped the chin on tight `closeUp`-style avatar framing,
+    // where the face fills much more of a 1080x1920 frame than `normal`
+    // style. This span (1920-250-340=1330 to 1920-250=1670) clears both the
+    // chin (~1220 in closeUp framing) and the caption area (~1750+).
+    bottom: 250,
     left: 40,
     right: 40,
-    height: 480,
+    height: 340,
   },
   upper_third: {
     position: "absolute",
@@ -240,6 +262,47 @@ const OverlayContent: React.FC<{ overlay: TalkingHeadOverlay }> = ({
       />
     );
   }
+  if (overlay.type === "broll_video" && overlay.videoSrc) {
+    return (
+      <OffthreadVideo
+        src={resolveAsset(overlay.videoSrc)}
+        muted
+        style={{ width: "100%", height: "100%", objectFit: "cover" }}
+      />
+    );
+  }
+  if (overlay.type === "cta_card" && overlay.text) {
+    return (
+      <AbsoluteFill
+        style={{
+          backgroundColor: overlay.backgroundColor || "#F1E6B2",
+          justifyContent: "center",
+          alignItems: "center",
+          flexDirection: "column",
+          padding: "0 90px",
+        }}
+      >
+        {overlay.logoSrc && (
+          <Img
+            src={resolveAsset(overlay.logoSrc)}
+            style={{ width: 260, marginBottom: 56, objectFit: "contain" }}
+          />
+        )}
+        <div
+          style={{
+            fontFamily: "'Raleway', 'Montserrat', system-ui, sans-serif",
+            fontWeight: 800,
+            fontSize: 58,
+            lineHeight: 1.28,
+            textAlign: "center",
+            color: overlay.color || "#004F71",
+          }}
+        >
+          {overlay.text}
+        </div>
+      </AbsoluteFill>
+    );
+  }
   return null;
 };
 
@@ -269,6 +332,10 @@ const PositionedOverlay: React.FC<{ overlay: TalkingHeadOverlay }> = ({
   const position = overlay.position || "lower_third";
   const posStyle = POSITION_STYLES[position] || POSITION_STYLES.lower_third;
   const isFullOverlay = position === "full_overlay";
+  // b-roll and CTA cards fill the frame with their own real content —
+  // the dark scrim exists to make TEXT overlays legible over dimmed
+  // video, and would make b-roll footage nearly invisible.
+  const wantsScrim = isFullOverlay && overlay.type !== "broll_video" && overlay.type !== "cta_card";
 
   return (
     <div
@@ -282,7 +349,7 @@ const PositionedOverlay: React.FC<{ overlay: TalkingHeadOverlay }> = ({
           : "0 8px 32px rgba(0, 0, 0, 0.4)",
       }}
     >
-      {isFullOverlay && (
+      {wantsScrim && (
         <AbsoluteFill style={{ background: "rgba(0, 0, 0, 0.7)" }} />
       )}
       <OverlayContent overlay={overlay} />
@@ -302,6 +369,11 @@ export interface TalkingHeadProps {
   wordsPerPage?: number;
   fontSize?: number;
   highlightColor?: string;
+  captionColor?: string;
+  captionBackgroundColor?: string;
+  captionFontFamily?: string;
+  logoSrc?: string;
+  logoOutSeconds?: number;
 }
 
 export const TalkingHead: React.FC<TalkingHeadProps> = ({
@@ -310,19 +382,27 @@ export const TalkingHead: React.FC<TalkingHeadProps> = ({
   overlays,
   wordsPerPage = 4,
   fontSize = 52,
-  highlightColor = "#22D3EE",
+  highlightColor = "#00B398",
+  captionColor = "#FFFFFF",
+  captionBackgroundColor = "rgba(0, 79, 113, 0.72)",
+  captionFontFamily = "'Raleway', 'Montserrat', system-ui, sans-serif",
+  logoSrc,
+  logoOutSeconds,
 }) => {
-  const { fps } = useVideoConfig();
+  const { fps, durationInFrames } = useVideoConfig();
+  const logoOutFrame = logoOutSeconds
+    ? Math.round(logoOutSeconds * fps)
+    : durationInFrames;
 
   return (
     <AbsoluteFill style={{ backgroundColor: "#000" }}>
       {/* Layer 1: Video background */}
       <OffthreadVideo
-        src={videoSrc}
+        src={resolveAsset(videoSrc)}
         style={{ width: "100%", height: "100%", objectFit: "cover" }}
       />
 
-      {/* Layer 2: Overlays (charts, stats, callouts, etc.) */}
+      {/* Layer 2: Overlays (charts, stats, callouts, b-roll, CTA card, etc.) */}
       {overlays?.map((overlay, i) => {
         const from = Math.round(overlay.in_seconds * fps);
         const duration = Math.round(
@@ -339,15 +419,41 @@ export const TalkingHead: React.FC<TalkingHeadProps> = ({
         );
       })}
 
-      {/* Layer 3: Captions (topmost — always visible above overlays) */}
+      {/* Layer 3: Captions (above overlays, so word highlighting still reads over b-roll) */}
       <CaptionOverlay
         words={captions}
         wordsPerPage={wordsPerPage}
         fontSize={fontSize}
         highlightColor={highlightColor}
-        backgroundColor="rgba(0, 0, 0, 0.65)"
-        color="#FFFFFF"
+        backgroundColor={captionBackgroundColor}
+        color={captionColor}
+        fontFamily={captionFontFamily}
       />
+
+      {/* Layer 4: Persistent brand watermark — bottom-right, low-key, stops before the CTA card (which carries the full logo instead) */}
+      {logoSrc && (
+        <Sequence from={0} durationInFrames={logoOutFrame}>
+          <AbsoluteFill
+            style={{ justifyContent: "flex-end", alignItems: "flex-end" }}
+          >
+            <Img
+              src={resolveAsset(logoSrc)}
+              style={{
+                width: 230,
+                // Pulled closer to the true bottom-right corner and enlarged
+                // per explicit feedback (was width:158/bottom:185, read as
+                // too small and too far from the corner). Some overlap with
+                // wide caption lines is possible since captions run maxWidth
+                // 80% centered — re-check after render and nudge further if
+                // it visibly collides.
+                margin: "0 26px 130px 0",
+                opacity: 0.95,
+                filter: "drop-shadow(0 2px 10px rgba(0,0,0,0.45))",
+              }}
+            />
+          </AbsoluteFill>
+        </Sequence>
+      )}
     </AbsoluteFill>
   );
 };

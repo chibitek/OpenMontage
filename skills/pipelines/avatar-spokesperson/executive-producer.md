@@ -46,17 +46,22 @@ EP_STATE:
 
 ## Pivot Decision Matrix
 
-`talking_head` is the preferred tool but commonly unavailable (requires GPU or HeyGen API key). When blocked, the EP must route the project explicitly — not improvise.
+Check availability in this order: `heygen_avatar` (needs a specific avatar Look ID + voice ID from the user — best quality, brand-consistent, user's own likeness) → `talking_head` (SadTalker, needs GPU or is commonly unavailable) → `lip_sync`. When blocked, the EP must route the project explicitly — not improvise.
 
 ```
-IF talking_head AVAILABLE:
+IF heygen_avatar AVAILABLE (user has a HeyGen Look ID) AND user has an avatar_id + voice_id:
+  → Preferred path. If the user also has a TTS clone of the same voice (e.g. ElevenLabs
+    voice_id), use the hybrid TTS→avatar workflow (asset-director.md § 1a) instead of
+    HeyGen's own TTS — cheaper iteration, no stutter/pronunciation lock-in.
+
+IF talking_head AVAILABLE (and heygen_avatar not applicable):
   → Standard avatar path. Proceed as normal.
 
 IF talking_head UNAVAILABLE and lip_sync AVAILABLE:
   → Lip-sync path. User must supply a presenter plate (existing footage).
     Script and scene plan stay the same.
 
-IF NEITHER talking_head NOR lip_sync AVAILABLE:
+IF NEITHER heygen_avatar NOR talking_head NOR lip_sync AVAILABLE:
   → Narration-Over-Graphics pivot.
     Tell the user: "No avatar tool is configured. I can produce a
     narration-over-graphics video instead — your script and CTA stay the same,
