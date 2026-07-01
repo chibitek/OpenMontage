@@ -10,7 +10,7 @@ This stage prepares the actual spokesperson ingredients: narration, avatar or li
 |-------|----------|---------|
 | Schema | `schemas/artifacts/asset_manifest.schema.json` | Artifact validation |
 | Prior artifacts | `state.artifacts["scene_plan"]["scene_plan"]`, `state.artifacts["script"]["script"]`, `state.artifacts["idea"]["brief"]` | Presenter plan and narration needs |
-| Tools | `talking_head`, `lip_sync`, `tts_selector`, `subtitle_gen`, `image_selector`, `audio_enhance` — selectors auto-discover all available providers from the registry | Avatar, narration, and support asset options |
+| Tools | `talking_head`, `lip_sync`, `heygen_avatar`, `tts_selector`, `subtitle_gen`, `image_selector`, `audio_enhance` — selectors auto-discover all available providers from the registry | Avatar, narration, and support asset options |
 | Playbook | Active style playbook | Background, type, and subtitle rules |
 
 ## Process
@@ -19,20 +19,39 @@ This stage prepares the actual spokesperson ingredients: narration, avatar or li
 
 Use one primary path and record it clearly:
 
-- `talking_head` from still image plus audio,
+- `heygen_avatar` — a specific HeyGen avatar Look ID + Voice ID (the user's own cloned digital avatar). Best path when the user has HeyGen credentials for a real Look/Voice ID; produces the most natural, brand-consistent presenter. Two voice-input modes:
+  - `voice.type: "text"` — HeyGen's own TTS reads the script. Simple, but pronunciation/pacing bugs (stutters, mispronunciations) can only be fixed by re-spending a full HeyGen render.
+  - `voice.type: "audio"` (**preferred when an ElevenLabs (or other TTS) clone of the same voice exists**) — generate narration cheaply via `tts_selector`/`elevenlabs_tts` first, upload it via `heygen_avatar`'s `audio_path` input (this uploads to HeyGen's asset endpoint automatically and drives lip sync from that audio instead of HeyGen's TTS). Iterate on pacing/pronunciation almost for free before ever spending a HeyGen credit. See "Hybrid TTS→Avatar Workflow" below.
+- `talking_head` from still image plus audio (SadTalker, local GPU),
 - `lip_sync` from existing presenter plate plus new audio,
 - externally supplied avatar render if created outside the current runtime.
 
 Do not hide a blocked avatar path. Record it.
 
-### 1b. Sample Preview (Prevents Wasted Spend)
+### 1a. Hybrid TTS→Avatar Workflow (heygen_avatar audio mode)
 
-Before batch-generating assets, produce one sample of each expensive type and show the user:
+When the user has both a HeyGen avatar (Look ID) and a TTS voice clone of the same voice (e.g. ElevenLabs), prefer this over HeyGen's own TTS:
+
+1. Generate narration with the cheap TTS tool (e.g. `elevenlabs_tts` with the user's `voice_id`). Iterate here — this costs cents, not credits.
+2. Once the narration sounds right, pass the local audio file straight to `heygen_avatar` via `audio_path` (it uploads to `https://upload.heygen.com/v1/asset` and calls the avatar with `voice.type: "audio"` automatically — no separate upload step needed).
+3. Only now do a HeyGen render (test mode first, see below).
+
+If a script segment causes an avatar glitch (stutter, mispronunciation, unnatural pacing), the fix is almost always in the ElevenLabs step (rephrase, adjust `stability`/`style`, regenerate that segment's audio) — cheap to retry — rather than fighting HeyGen's own TTS.
+
+### 1b. Sample Preview (Prevents Wasted Spend) — MANDATORY, no exceptions
+
+Before **any** real (credit-consuming) HeyGen render, produce a `test: true` (free, watermarked) preview and confirm it first. This applies every time, not just the first generation of a project — re-verify after any script, voice, or framing change too.
 
 1. **TTS sample** (if generating narration): Generate one section. Confirm voice, pace, and persona before batching the rest.
-2. **Avatar sample** (if using `talking_head`): Generate a short test clip. Confirm the avatar quality is acceptable before committing to full generation.
+2. **Avatar sample** (`heygen_avatar` with `test: true`, or `talking_head`): Generate a short test clip. Confirm avatar quality, lip-sync, and pacing are acceptable before committing to a real render.
 
-If rejected, adjust parameters and retry (max 3 iterations). Do not batch until approved.
+If rejected, adjust parameters and retry (max 3 iterations). Do not batch until approved. **Never call `heygen_avatar` with `test: false` without a preceding `test: true` call on the same (or materially similar) inputs.**
+
+**Known exception (confirmed 2026-07-01):** HeyGen's free `test: true` preview has its own daily quota (observed: 5/day) that is entirely separate from the account's plan or credit balance — exhausting it returns HTTP 429 `trial_video_limit_exceeded`. This is NOT an account-wide block; do not spend time checking billing dashboards, upgrading plans, or rotating API keys over this specific error — none of those fix it. If the preview quota is exhausted and the scene has already been validated (script reviewed, prior scenes in the same project rendered cleanly with the same avatar/voice), it's acceptable to proceed directly to `test: false` for that scene rather than blocking the whole project on a quota reset. Tell the user this is what's happening.
+
+### 1c. Scene-Level Regeneration, Not Whole-Script
+
+When only part of an avatar render has an issue, regenerate just that scene/segment and stitch it back into the existing render — do not regenerate the full script end-to-end. Keep scenes as separate output files (e.g. `scene1.mp4`, `scene2.mp4`) precisely so a fix to one doesn't require paying for/re-rendering the others. After stitching, downstream caption/overlay timing must be rebuilt from the new stitched timeline's actual timestamps (re-transcribe), not reused from the old one.
 
 ### 2. Resolve Narration Before Support Graphics
 
