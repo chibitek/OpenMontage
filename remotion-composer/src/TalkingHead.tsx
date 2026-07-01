@@ -3,6 +3,7 @@ import {
   OffthreadVideo,
   Sequence,
   interpolate,
+  staticFile,
   useCurrentFrame,
   useVideoConfig,
 } from "remotion";
@@ -18,6 +19,18 @@ import { KPIGrid } from "./components/charts/KPIGrid";
 import { HeroTitle } from "./components/HeroTitle";
 import { SectionTitle } from "./components/SectionTitle";
 import { StatReveal } from "./components/StatReveal";
+
+// Resolve asset path — pass through URLs unchanged; treat everything else as
+// a public/-relative path (video_compose localizes local absolute paths into
+// public/ before rendering, so staticFile() is the only mechanism Remotion's
+// renderer actually supports for local assets — file:// URIs are rejected).
+function resolveAsset(src: string): string {
+  if (src.startsWith("http://") || src.startsWith("https://") || src.startsWith("data:")) {
+    return src;
+  }
+  const clean = src.replace(/^file:\/\/\/?/, "");
+  return staticFile(clean);
+}
 
 // ---------------------------------------------------------------------------
 // Overlay types for talking-head video
@@ -318,7 +331,7 @@ export const TalkingHead: React.FC<TalkingHeadProps> = ({
     <AbsoluteFill style={{ backgroundColor: "#000" }}>
       {/* Layer 1: Video background */}
       <OffthreadVideo
-        src={videoSrc}
+        src={resolveAsset(videoSrc)}
         style={{ width: "100%", height: "100%", objectFit: "cover" }}
       />
 
