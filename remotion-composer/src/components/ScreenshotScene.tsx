@@ -89,9 +89,6 @@ function resolveAsset(src: string): string {
     return src;
   }
   const clean = src.replace(/^file:\/\/\/?/, "");
-  if (clean.startsWith("/") || /^[A-Za-z]:[\\/]/.test(clean)) {
-    return `file:///${clean.replace(/\\/g, "/")}`;
-  }
   return staticFile(clean);
 }
 
